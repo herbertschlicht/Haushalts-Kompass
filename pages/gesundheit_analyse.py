@@ -1,83 +1,134 @@
 import streamlit as st
 import pandas as pd
-import altair as alt
+from datetime import date
+
 from services.data_service_gesundheit import load_entries_gesundheit
 
+
+def _safe_df(data):
+    df = pd.DataFrame(data)
+    if len(df) == 0:
+        return df
+    if "datum" in df.columns:
+        df["datum"] = pd.to_datetime(df["datum"])
+        df["jahr"] = df["datum"].dt.year
+        df["monat"] = df["datum"].dt.to_period("M")
+    return df
+
+
 def show():
-    st.title("📈 Gesundheit – Analyse")
+    st.title("🩺 Gesundheit – Analyse (Premium)")
 
-    # Daten laden
-    eintraege = load_entries_gesundheit()
+    st.write(
+        "Detaillierte Auswertung der Gesundheitskosten mit Fokus auf "
+        "Eigenanteile, Erstattungen, Kategorien und zeitliche Entwicklung."
+    )
 
-    if len(eintraege) == 0:
-        st.info("Noch keine Gesundheitsbelege vorhanden.")
+    data = load_entries_gesundheit()
+    df = _safe_df(data)
+
+    if len(df) == 0:
+        st.info("Noch keine Gesundheitsdaten vorhanden.")
         return
 
-    # DataFrame
-    df = pd.DataFrame(eintraege)
-    df["betrag"] = df["betrag"].astype(float)
-    df["datum"] = pd.to_datetime(df["datum"])
+    aktuelles_jahr = date.today().year
 
-    st.subheader("Filter")
+    # Filterbereich
+    st.sidebar.header("Filter – Gesundheit")
+    jahre = sorted(df["jahr"].unique())
+    jahr_auswahl = st.sidebar.selectbox("Jahr", jahre, index=jahre.index(aktuelles_jahr) if aktuelles_jahr in jahre else 0)
 
-    # Filter: Zeitraum
-    col1, col2 = st.columns(2)
-    start_datum = col1.date_input("Startdatum", df["datum"].min())
-    end_datum = col2.date_input("Enddatum", df["datum"].max())
+    df_jahr = df[df["jahr"] == jahr_auswahl]
 
-    # Filter: Kategorie
-    kategorien = ["Alle"] + sorted(df["kategorie"].unique().tolist())
-    kategorie_filter = st.selectbox("Fachrichtung / Kategorie", kategorien)
+    kategorien = sorted(df_jahr["kategorie"].dropna().unique()) if "kategorie" in df_jahr.columns else []
+    kategorie_auswahl = st.sidebar.multiselect("Kategorien", kategorien, default=kategorien)
 
-    # Filter anwenden
-    df_filtered = df[(df["datum"] >= pd.to_datetime(start_datum)) &
-                     (df["datum"] <= pd.to_datetime(end_datum))]
+    if kategorie_auswahl:
+        df_jahr = df_jahr[df_jahr["kategorie"].isin(kategorie_auswahl)]
 
-    if kategorie_filter != "Alle":
-        df_filtered = df_filtered[df_filtered["kategorie"] == kategorie_filter]
+    # KPIs
+    st.subheader(f"📌 Kennzahlen {jahr_auswahl}")
 
-    st.subheader("Gefilterte Gesundheitsbelege")
-    st.dataframe(df_filtered, use_container_width=True)
+    sum_gesamt = df_jahr["betrag"].sum()
+    sum_eigenanteil = df_jahr["eigenanteil"].sum() if "eigenanteil" in df_jahr.columns else 0.0
+    sum_nicht_erstattet = df_jahr[df_jahr.get("erstattet", "") == "Nein"]["betrag"].sum() if "erstattet" in df_jahr.columns else 0.0
 
-    # Gesamtsumme
-    summe = df_filtered["betrag"].sum()
-    st.metric("Summe der gefilterten Gesundheitskosten", f"{summe:.2f} €")
+    erstattete = df_jahr[df_jahr.get("erstattet", "") == "Ja"]["betrag"].sum() if "erstattet" in df_jahr.columns else 0.0
+    erstattungsquote = (erstattete / sum_gesamt * 100) if sum_gesamt > 0 else 0.0
 
-    # Kategorienvergleich
-    st.subheader("Kosten pro Fachrichtung (gefiltert)")
-    kat_sum = df_filtered.groupby("kategorie")["betrag"].sum().reset_index()
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Gesundheitskosten gesamt", f"{sum_gesamt:,.2f} €".replace(",", " "))
+    with col2:
+        st.metric("Eigenanteile gesamt", f"{sum_eigenanteil:,.2f} €".replace(",", " "))
+    with col3:
+        st.metric("Nicht erstattete Kosten", f"{sum_nicht_erstattet:,.2f} €".replace(",", " "))
 
-    if len(kat_sum) > 0:
-        chart_kat = (
-            alt.Chart(kat_sum)
-            .mark_bar()
-            .encode(
-                x=alt.X("kategorie:N", sort="-y", title="Fachrichtung"),
-                y=alt.Y("betrag:Q", title="Betrag (€)"),
-                tooltip=["kategorie", "betrag"]
-            )
-            .properties(height=400)
+    col4, col5 = st.columns(2)
+    with col4:
+        st.metric("Erstattete Kosten", f"{erstattete:,.2f} €".replace(",", " "))
+    with col5:
+        st.metric("Erstattungsquote", f"{erstattungsquote:.1f} %")
+
+    # Monatsverlauf
+    st.subheader("📆 Monatsverlauf – Gesundheitskosten")
+
+    monat_agg = (
+        df_jahr.groupby("monat")[["betrag", "eigenanteil"]]
+        .sum()
+        .reset_index()
+        .sort_values("monat")
+    )
+    monat_agg["Monat"] = monat_agg["monat"].astype(str)
+    monat_agg = monat_agg.set_index("Monat")
+
+    st.line_chart(monat_agg)
+
+    # Kategorien – Heilbehandlungen vs. Medikamente vs. Rest
+    st.subheader("🏷️ Kategorien – Struktur der Gesundheitskosten")
+
+    heil_kategorien = ["Physiotherapie", "Ergotherapie", "Logopädie", "Akupunktur", "Osteopathie"]
+    arzt_kategorien = [
+        "Allgemeinmedizin", "Orthopädie", "Kardiologie", "Dermatologie", "Neurologie",
+        "HNO", "Augenarzt", "Diabetologie", "Pneumologie", "Psychotherapie", "Krankenhaus", "Labor"
+    ]
+    medi_kategorien = ["Medikamente", "Hilfsmittel"]
+
+    heil_summe = df_jahr[df_jahr["kategorie"].isin(heil_kategorien)]["betrag"].sum()
+    arzt_summe = df_jahr[df_jahr["kategorie"].isin(arzt_kategorien)]["betrag"].sum()
+    medi_summe = df_jahr[df_jahr["kategorie"].isin(medi_kategorien)]["betrag"].sum()
+    rest_summe = sum_gesamt - (heil_summe + arzt_summe + medi_summe)
+
+    kat_df = pd.DataFrame(
+        {
+            "Kategorie": ["Heilbehandlungen", "Arztkosten", "Medikamente & Hilfsmittel", "Sonstige"],
+            "Betrag (€)": [heil_summe, arzt_summe, medi_summe, rest_summe],
+        }
+    ).set_index("Kategorie")
+
+    st.bar_chart(kat_df)
+
+    # Top-Kategorien
+    st.subheader("🏷️ Top-Kategorien (Detail)")
+
+    if "kategorie" in df_jahr.columns:
+        top_kat = (
+            df_jahr.groupby("kategorie")["betrag"]
+            .sum()
+            .reset_index()
+            .sort_values("betrag", ascending=False)
+            .head(15)
         )
-        st.altair_chart(chart_kat, use_container_width=True)
+        top_kat.columns = ["Kategorie", "Gesundheitskosten (€)"]
+        st.bar_chart(top_kat.set_index("Kategorie"))
     else:
-        st.info("Keine Daten für Kategorienvergleich.")
+        st.info("Keine Kategorien in den Gesundheitsdaten vorhanden.")
 
-    # Monatsanalyse
-    st.subheader("Monatliche Entwicklung (gefiltert)")
-    df_filtered["monat"] = df_filtered["datum"].dt.to_period("M").astype(str)
-    monat_sum = df_filtered.groupby("monat")["betrag"].sum().reset_index()
+    # Detailtabelle
+    st.subheader("📋 Detailtabelle – gefilterte Gesundheitsdaten")
+    st.dataframe(df_jahr.sort_values("datum", ascending=False), use_container_width=True)
 
-    if len(monat_sum) > 0:
-        chart_monat = (
-            alt.Chart(monat_sum)
-            .mark_line(point=True)
-            .encode(
-                x=alt.X("monat:N", title="Monat"),
-                y=alt.Y("betrag:Q", title="Betrag (€)"),
-                tooltip=["monat", "betrag"]
-            )
-            .properties(height=400)
-        )
-        st.altair_chart(chart_monat, use_container_width=True)
-    else:
-        st.info("Keine Monatsdaten verfügbar.")
+    st.caption(
+        "Diese Analyse zeigt Gesundheitskosten, Eigenanteile, Erstattungen und die Verteilung "
+        "auf medizinische Kategorien. Filter links anpassen, um gezielt Bereiche zu untersuchen."
+    )
