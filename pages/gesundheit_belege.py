@@ -1,45 +1,81 @@
 import streamlit as st
-from services.data_service_gesundheit import load_entries_gesundheit, save_entries_gesundheit
+import pandas as pd
+from services.data_service_gesundheit import load_entries_gesundheit, save_entry_gesundheit
 
 def show():
-    st.title("🩺 Gesundheit – Belege erfassen")
+    st.title("🩺 Gesundheit – Belege")
 
-    st.subheader("Neue Gesundheitskosten hinzufügen")
+    st.subheader("Neuen Gesundheitsbeleg erfassen")
 
-    # Kategorien für Gesundheit
-    gesundheits_kategorien = [
-        "Allgemeinmedizin", "Kardiologie", "Pneumologie", "Diabetologie",
-        "Dermatologie", "Orthopädie", "Neurologie", "HNO", "Augenarzt",
-        "Zahnarzt", "Labor", "Medikamente", "Physiotherapie",
-        "Psychotherapie", "Krankenhaus", "Fahrtkosten", "Sonstiges"
-    ]
+    # Eingabefelder
+    col1, col2 = st.columns(2)
+    datum = col1.date_input("Datum")
 
-    betrag = st.number_input("Betrag (€)", min_value=0.0, format="%.2f")
-    kategorie = st.selectbox("Kategorie", gesundheits_kategorien)
-    datum = st.date_input("Datum")
-    kommentar = st.text_input("Kommentar")
+    # Sehr detaillierte medizinische Kategorien (G2)
+    kategorie = col2.selectbox(
+        "Art der medizinischen Leistung",
+        [
+            "Allgemeinmedizin",
+            "Orthopädie",
+            "Kardiologie",
+            "Dermatologie",
+            "Neurologie",
+            "HNO",
+            "Augenarzt",
+            "Diabetologie",
+            "Pneumologie",
+            "Psychotherapie",
+            "Krankenhaus",
+            "Labor",
+            "Physiotherapie",
+            "Ergotherapie",
+            "Logopädie",
+            "Akupunktur",
+            "Osteopathie",
+            "Medikamente",
+            "Hilfsmittel",
+            "Fahrtkosten",
+            "Sonstige medizinische Kosten"
+        ]
+    )
 
-    # Platzhalter für spätere Scan-Funktion
-    st.info("📸 Scan-Funktion für Arztrechnungen wird später integriert.")
+    betrag = st.number_input("Gesamtbetrag (€)", min_value=0.0, step=0.10)
+
+    # Steuerrelevante Felder
+    col3, col4 = st.columns(2)
+    eingereicht = col3.selectbox("Eingereicht?", ["Nein", "Ja"])
+    erstattet = col4.selectbox("Erstattet?", ["Nein", "Ja"])
+
+    eigenanteil = st.number_input(
+        "Eigenanteil (€)", 
+        min_value=0.0, 
+        step=0.10,
+        help="Der Teil, den du selbst zahlen musst (für außergewöhnliche Belastungen)."
+    )
+
+    kommentar = st.text_input("Kommentar (optional)")
 
     if st.button("Beleg speichern"):
         eintrag = {
-            "betrag": betrag,
-            "kategorie": kategorie,
             "datum": str(datum),
+            "kategorie": kategorie,
+            "betrag": round(betrag, 2),
+            "eingereicht": eingereicht,
+            "erstattet": erstattet,
+            "eigenanteil": round(eigenanteil, 2),
             "kommentar": kommentar
         }
 
-        eintraege = load_entries_gesundheit()
-        eintraege.append(eintrag)
-        save_entries_gesundheit(eintraege)
-
+        save_entry_gesundheit(eintrag)
         st.success("Gesundheitsbeleg gespeichert!")
 
     st.subheader("Gespeicherte Gesundheitsbelege")
+
     eintraege = load_entries_gesundheit()
 
     if len(eintraege) == 0:
         st.info("Noch keine Gesundheitsbelege vorhanden.")
-    else:
-        st.dataframe(eintraege, use_container_width=True)
+        return
+
+    df = pd.DataFrame(eintraege)
+    st.dataframe(df, use_container_width=True)
