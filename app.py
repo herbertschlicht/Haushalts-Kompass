@@ -1,23 +1,25 @@
 import streamlit as st
+from pages import belegeseite, dashboardseite, analyseseite, einstellungen
 
-st.set_page_config(
-    page_title="Haushalts-Kompass",
-    page_icon="💶",
-    layout="wide",
+# Titel oben
+st.set_page_config(page_title="Haushalts-Kompass", layout="wide")
+
+# Sidebar Navigation
+st.sidebar.title("📘 Haushalts-Kompass")
+auswahl = st.sidebar.radio(
+    "Navigation",
+    ["Belege", "Dashboard", "Analyse", "Einstellungen"]
 )
 
-st.title("💶 Haushalts-Kompass")
-st.markdown("Willkommen im **Haushalts-Kompass** – dein Kompass für Haushalt, Belege, Arztkosten und Steuer.")
+# Seitenlogik
+if auswahl == "Belege":
+    belegeseite.show()
 
-st.markdown(
-    """
-    ### Bereiche
-    - 📊 Dashboard (Überblick)
-    - 📄 Belege (Erfassung, Upload, KI-Analyse)
-    - 🧾 Steuer (Auswertung)
-    - 🩺 Arzt & Fahrten (später eigene Seite)
-    - 📘 Journal & Druckansicht (später)
-    """
-)
+elif auswahl == "Dashboard":
+    dashboardseite.show()
 
-st.info("Nutze das Seiten-Menü links (Pages), um zwischen Dashboard und Belegen zu wechseln.")
+elif auswahl == "Analyse":
+    analyseseite.show()
+
+elif auswahl == "Einstellungen":
+    einstellungen.show()
