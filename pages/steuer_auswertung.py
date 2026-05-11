@@ -98,3 +98,83 @@ def show():
 
     st.subheader("📋 Alle Gesundheitsbelege")
     st.dataframe(gesundheit, use_container_width=True)
+    # ---------------------------------------------------------
+    # KOMBINIERTE JAHRESÜBERSICHT – Haushalt + Gesundheit
+    # ---------------------------------------------------------
+    st.header("📘 Kombinierte Jahres-Steuerübersicht")
+
+    # Haushalt Jahreswerte
+    if len(haushalt) > 0:
+        haushalt_jahr = haushalt.groupby("jahr")[["mwst_betrag", "betrag_netto", "betrag_brutto"]].sum()
+        haushalt_jahr.columns = ["MwSt Haushalt (€)", "Netto Haushalt (€)", "Brutto Haushalt (€)"]
+    else:
+        haushalt_jahr = pd.DataFrame()
+
+    # Gesundheit Jahreswerte
+    if len(gesundheit) > 0:
+        gesundheit_jahr = gesundheit.groupby("jahr")[["betrag", "eigenanteil"]].sum()
+        gesundheit_jahr.columns = ["Gesundheitskosten (€)", "Eigenanteile (€)"]
+    else:
+        gesundheit_jahr = pd.DataFrame()
+
+    # Zusammenführen
+    if len(haushalt_jahr) > 0 or len(gesundheit_jahr) > 0:
+        combined = pd.concat([haushalt_jahr, gesundheit_jahr], axis=1).fillna(0)
+
+        # Steuerlich relevante Summe
+        combined["Steuerlich absetzbar (€)"] = (
+            combined["Eigenanteile (€)"] +
+            (combined["Gesundheitskosten (€)"] - combined["Eigenanteile (€)"])
+        )
+
+        st.subheader("📊 Jahresübersicht – Gesamt")
+        st.dataframe(combined, use_container_width=True)
+
+        st.info(
+            "Die Spalte **„Steuerlich absetzbar“** enthält:\n"
+            "- Eigenanteile\n"
+            "- nicht erstattete Gesundheitskosten\n"
+            "- medizinisch notwendige Leistungen"
+        )
+    else:
+        st.info("Noch keine Daten für eine kombinierte Übersicht vorhanden.")
+    # ---------------------------------------------------------
+    # KOMBINIERTE JAHRESÜBERSICHT – Haushalt + Gesundheit
+    # ---------------------------------------------------------
+    st.header("📘 Kombinierte Jahres-Steuerübersicht")
+
+    # Haushalt Jahreswerte
+    if len(haushalt) > 0:
+        haushalt_jahr = haushalt.groupby("jahr")[["mwst_betrag", "betrag_netto", "betrag_brutto"]].sum()
+        haushalt_jahr.columns = ["MwSt Haushalt (€)", "Netto Haushalt (€)", "Brutto Haushalt (€)"]
+    else:
+        haushalt_jahr = pd.DataFrame()
+
+    # Gesundheit Jahreswerte
+    if len(gesundheit) > 0:
+        gesundheit_jahr = gesundheit.groupby("jahr")[["betrag", "eigenanteil"]].sum()
+        gesundheit_jahr.columns = ["Gesundheitskosten (€)", "Eigenanteile (€)"]
+    else:
+        gesundheit_jahr = pd.DataFrame()
+
+    # Zusammenführen
+    if len(haushalt_jahr) > 0 or len(gesundheit_jahr) > 0:
+        combined = pd.concat([haushalt_jahr, gesundheit_jahr], axis=1).fillna(0)
+
+        # Steuerlich relevante Summe
+        combined["Steuerlich absetzbar (€)"] = (
+            combined["Eigenanteile (€)"] +
+            (combined["Gesundheitskosten (€)"] - combined["Eigenanteile (€)"])
+        )
+
+        st.subheader("📊 Jahresübersicht – Gesamt")
+        st.dataframe(combined, use_container_width=True)
+
+        st.info(
+            "Die Spalte **„Steuerlich absetzbar“** enthält:\n"
+            "- Eigenanteile\n"
+            "- nicht erstattete Gesundheitskosten\n"
+            "- medizinisch notwendige Leistungen"
+        )
+    else:
+        st.info("Noch keine Daten für eine kombinierte Übersicht vorhanden.")
