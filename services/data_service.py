@@ -6,15 +6,20 @@ from typing import List, Dict, Any
 DB_PATH = Path("/mount/data/database.json")
 
 def load_entries() -> List[Dict[str, Any]]:
-    if not DB_PATH.exists():
-        return []
     try:
-        with DB_PATH.open("r", encoding="utf-8") as f:
-            return json.load(f)
-    except json.JSONDecodeError:
+        if DB_PATH.exists():
+            with DB_PATH.open("r", encoding="utf-8") as f:
+                return json.load(f)
+        else:
+            # Datei automatisch anlegen, wenn sie fehlt
+            with DB_PATH.open("w", encoding="utf-8") as f:
+                json.dump([], f)
+            return []
+    except Exception:
         return []
 
 def save_entries(entries: List[Dict[str, Any]]) -> None:
-    # WICHTIG: KEIN mkdir() MEHR!
+    # Datei immer überschreiben – Streamlit darf das
     with DB_PATH.open("w", encoding="utf-8") as f:
         json.dump(entries, f, ensure_ascii=False, indent=2)
+
