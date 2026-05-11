@@ -2,7 +2,8 @@ import json
 from pathlib import Path
 from typing import List, Dict, Any
 
-DB_PATH = Path("database.json")
+# Speicherort für Streamlit Cloud (schreibbar!)
+DB_PATH = Path("/mount/data/database.json")
 
 def load_entries() -> List[Dict[str, Any]]:
     if not DB_PATH.exists():
@@ -14,5 +15,7 @@ def load_entries() -> List[Dict[str, Any]]:
         return []
 
 def save_entries(entries: List[Dict[str, Any]]) -> None:
+    # Stelle sicher, dass der Ordner existiert
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with DB_PATH.open("w", encoding="utf-8") as f:
         json.dump(entries, f, ensure_ascii=False, indent=2)
