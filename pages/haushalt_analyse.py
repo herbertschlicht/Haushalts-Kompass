@@ -1,83 +1,101 @@
 import streamlit as st
 import pandas as pd
-import altair as alt
+from datetime import date
+
 from services.data_service_haushalt import load_entries_haushalt
 
+
+def _safe_df(data):
+    df = pd.DataFrame(data)
+    if len(df) == 0:
+        return df
+    if "datum" in df.columns:
+        df["datum"] = pd.to_datetime(df["datum"])
+        df["jahr"] = df["datum"].dt.year
+        df["monat"] = df["datum"].dt.to_period("M")
+    return df
+
+
 def show():
-    st.title("📈 Haushalt – Analyse")
+    st.title("🏠 Haushalt – Analyse (Premium)")
 
-    # Daten laden
-    eintraege = load_entries_haushalt()
+    st.write(
+        "Detaillierte Auswertung der Haushaltsdaten mit Fokus auf "
+        "Netto, MwSt, Kategorien und zeitlichen Verläufen."
+    )
 
-    if len(eintraege) == 0:
-        st.info("Noch keine Haushaltsbelege vorhanden.")
+    data = load_entries_haushalt()
+    df = _safe_df(data)
+
+    if len(df) == 0:
+        st.info("Noch keine Haushaltsdaten vorhanden.")
         return
 
-    # DataFrame
-    df = pd.DataFrame(eintraege)
-    df["betrag"] = df["betrag"].astype(float)
-    df["datum"] = pd.to_datetime(df["datum"])
+    aktuelles_jahr = date.today().year
 
-    st.subheader("Filter")
+    # Filterbereich
+    st.sidebar.header("Filter – Haushalt")
+    jahre = sorted(df["jahr"].unique())
+    jahr_auswahl = st.sidebar.selectbox("Jahr", jahre, index=jahre.index(aktuelles_jahr) if aktuelles_jahr in jahre else 0)
 
-    # Filter: Zeitraum
-    col1, col2 = st.columns(2)
-    start_datum = col1.date_input("Startdatum", df["datum"].min())
-    end_datum = col2.date_input("Enddatum", df["datum"].max())
+    df_jahr = df[df["jahr"] == jahr_auswahl]
 
-    # Filter: Kategorie
-    kategorien = ["Alle"] + sorted(df["kategorie"].unique().tolist())
-    kategorie_filter = st.selectbox("Kategorie", kategorien)
+    kategorien = sorted(df_jahr["kategorie"].dropna().unique()) if "kategorie" in df_jahr.columns else []
+    kategorie_auswahl = st.sidebar.multiselect("Kategorien", kategorien, default=kategorien)
 
-    # Filter anwenden
-    df_filtered = df[(df["datum"] >= pd.to_datetime(start_datum)) &
-                     (df["datum"] <= pd.to_datetime(end_datum))]
+    if kategorie_auswahl:
+        df_jahr = df_jahr[df_jahr["kategorie"].isin(kategorie_auswahl)]
 
-    if kategorie_filter != "Alle":
-        df_filtered = df_filtered[df_filtered["kategorie"] == kategorie_filter]
+    # KPIs
+    st.subheader(f"📌 Kennzahlen {jahr_auswahl}")
 
-    st.subheader("Gefilterte Belege")
-    st.dataframe(df_filtered, use_container_width=True)
+    sum_brutto = df_jahr["betrag_brutto"].sum()
+    sum_netto = df_jahr["betrag_netto"].sum()
+    sum_mwst = df_jahr["mwst_betrag"].sum()
 
-    # Gesamtsumme
-    summe = df_filtered["betrag"].sum()
-    st.metric("Summe der gefilterten Ausgaben", f"{summe:.2f} €")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Brutto gesamt", f"{sum_brutto:,.2f} €".replace(",", " "))
+    with col2:
+        st.metric("Netto gesamt", f"{sum_netto:,.2f} €".replace(",", " "))
+    with col3:
+        st.metric("MwSt gesamt", f"{sum_mwst:,.2f} €".replace(",", " "))
 
-    # Kategorienvergleich
-    st.subheader("Ausgaben pro Kategorie (gefiltert)")
-    kat_sum = df_filtered.groupby("kategorie")["betrag"].sum().reset_index()
+    # Monatsverlauf
+    st.subheader("📆 Monatsverlauf – Brutto / Netto / MwSt")
 
-    if len(kat_sum) > 0:
-        chart_kat = (
-            alt.Chart(kat_sum)
-            .mark_bar()
-            .encode(
-                x=alt.X("kategorie:N", sort="-y", title="Kategorie"),
-                y=alt.Y("betrag:Q", title="Betrag (€)"),
-                tooltip=["kategorie", "betrag"]
-            )
-            .properties(height=400)
+    monat_agg = (
+        df_jahr.groupby("monat")[["betrag_brutto", "betrag_netto", "mwst_betrag"]]
+        .sum()
+        .reset_index()
+        .sort_values("monat")
+    )
+    monat_agg["Monat"] = monat_agg["monat"].astype(str)
+    monat_agg = monat_agg.set_index("Monat")
+
+    st.line_chart(monat_agg)
+
+    # Top-Kategorien
+    st.subheader("🏷️ Top-Kategorien (Brutto)")
+
+    if "kategorie" in df_jahr.columns:
+        top_kat = (
+            df_jahr.groupby("kategorie")["betrag_brutto"]
+            .sum()
+            .reset_index()
+            .sort_values("betrag_brutto", ascending=False)
+            .head(15)
         )
-        st.altair_chart(chart_kat, use_container_width=True)
+        top_kat.columns = ["Kategorie", "Brutto (€)"]
+        st.bar_chart(top_kat.set_index("Kategorie"))
     else:
-        st.info("Keine Daten für Kategorienvergleich.")
+        st.info("Keine Kategorien in den Haushaltsdaten vorhanden.")
 
-    # Monatsanalyse
-    st.subheader("Monatliche Entwicklung (gefiltert)")
-    df_filtered["monat"] = df_filtered["datum"].dt.to_period("M").astype(str)
-    monat_sum = df_filtered.groupby("monat")["betrag"].sum().reset_index()
+    # Detailtabelle
+    st.subheader("📋 Detailtabelle – gefilterte Haushaltsdaten")
+    st.dataframe(df_jahr.sort_values("datum", ascending=False), use_container_width=True)
 
-    if len(monat_sum) > 0:
-        chart_monat = (
-            alt.Chart(monat_sum)
-            .mark_line(point=True)
-            .encode(
-                x=alt.X("monat:N", title="Monat"),
-                y=alt.Y("betrag:Q", title="Betrag (€)"),
-                tooltip=["monat", "betrag"]
-            )
-            .properties(height=400)
-        )
-        st.altair_chart(chart_monat, use_container_width=True)
-    else:
-        st.info("Keine Monatsdaten verfügbar.")
+    st.caption(
+        "Diese Analyse zeigt Netto, Brutto und MwSt nach Jahr, Monat und Kategorie. "
+        "Filter links anpassen, um gezielt Bereiche zu untersuchen."
+    )
